@@ -75,16 +75,20 @@ DEALINGS IN THE SOFTWARE.
 ```
 
 
-## Características comparadas com RC6 proposto na [competição para AES](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard_process)
+## Características do Ark6 comparadas com as do RC6
 
-| Característica    | RC6              |  Ark6     |
-|------------------:|:----------------:|:---------:|
-| Tamanho da chave  | 128/192/256 bits | 512 bits  |
-| Tamanho do bloco  | 128 bits         | 128 bits  |
-| Número de rounds  | 20               | 40        |
-| Tamanho variáveis | 32 bits          | 32 bits   |
-| Constante P       | bits de *e*      | bits de π |
-| Constante Q       | bits de φ        | bits de sqrt(2) |
+Este comparação é da versão do RC6 proposta na
+[competição para AES](https://en.wikipedia.org/wiki/Advanced_Encryption_Standard_process)
+
+
+| Característica    |  Ark6           | RC6              |
+|------------------:|:---------------:|:----------------:|
+| Tamanho da chave  | 512 bits        | 128/192/256 bits |
+| Tamanho do bloco  | 128 bits        | 128 bits         |
+| Número de rounds  | 40              | 20               |
+| Tamanho variáveis | 32 bits         | 32 bits          |
+| Constante P       | bits de π       | bits de *e*      |
+| Constante Q       | bits de sqrt(2) | bits de φ        |
 
 As constantes são obtidas da mesma forma do RC6, pegando os 32 bits após o ponto
 decimal e arredondando para o número inteiro ímpar mais próximo, porém com a
