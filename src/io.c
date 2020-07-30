@@ -200,9 +200,15 @@ le_senha(uint8_t *senha, int tam_buf)
             exit(0);
         }
         if (ch == CHR_CR || ch == CHR_LF) break;
-        if (ch == CHR_BACKSPACE && i > 0) {
-            i--;
-            senha[i] = '\0';
+        if (ch == CHR_BACKSPACE) {
+            if (i == 0) {
+                printf("%c", CHR_BEEP);
+                fflush(stdout);
+            }
+            else {
+                i--;
+                senha[i] = '\0';
+            }
             continue;
         }
         if (ch < ' ') continue;
