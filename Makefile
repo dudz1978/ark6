@@ -44,8 +44,8 @@ all: ./bin/ark6.exe
 	gcc -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
 
 install: ./bin/ark6.exe
-	del /F /Q C:\Windows\System32\ark6.exe 2> nul
-	mklink /H C:\Windows\System32\ark6.exe .\bin\ark6.exe
+	cmd /c del /F /Q C:\Windows\System32\ark6.exe 2> nul
+	cmd /c mklink /H C:\Windows\System32\ark6.exe .\bin\ark6.exe
 
 clean:
 	del /F /Q .\bin\*.o 2> nul

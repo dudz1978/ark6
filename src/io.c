@@ -186,12 +186,12 @@ salt_aleatorio(uint8_t *salt, const int qtd_bytes)
 }
 
 uint8_t *
-le_senha(uint8_t *senha, int tam_max)
+le_senha(uint8_t *senha, int tam_buf)
 {
     int ch;
     int i;
     i = 0;
-    while (i < tam_max) {
+    for(;;) {
         ch = getch();
         if (ch < 0 || ch == CHR_ESC) {
             while (i >= 0) senha[i--] = 0;
@@ -206,12 +206,17 @@ le_senha(uint8_t *senha, int tam_max)
             continue;
         }
         if (ch < ' ') continue;
+        if (i >= tam_buf - 1) {
+            printf("%c", CHR_BEEP);
+            fflush(stdout);
+            continue;
+        }
         senha[i] = (uint8_t) (ch & 0xffU);
         i++;
     }
     senha[i] = '\0';
     ch = i = 0;
-    tam_max = 0;
+    tam_buf = 0;
     return senha;
 }
 

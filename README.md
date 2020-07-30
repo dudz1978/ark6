@@ -145,7 +145,7 @@ simples atalhos para o hash já descrito acima.
 
 ### Entrada da senha
 
-A senha, com tamanho de até 1023 bits (futuramente poderá ser arbitrário),
+A senha, com tamanho de até 65535 caracteres,
 é coletada sem exibição, e coletada uma segunda vez para conferência,
 também sem exibição.
 

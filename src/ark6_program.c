@@ -59,7 +59,9 @@ criptografa_arquivo(const char *nome_arq, const char *nome_saida)
     int pos_bloco;
     uint32_t subkeys[DOIS_R_MAIS_4];
     uint8_t salt_384[3 * BLOCK_SIZE_BYTES];
-    uint8_t senha[1024], senha2[1024];
+    uint8_t senha[TAM_BUF_SENHA];
+    uint8_t hash_senha1[16];
+    uint8_t hash_senha2[16];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
     uint32_t tam_entrada;
@@ -78,19 +80,24 @@ criptografa_arquivo(const char *nome_arq, const char *nome_saida)
     }
     
     senha[0] = '\0';
-    senha2[0] = '\0';
+    i = 0; /* marcar que nao digitou nenhuma ainda */
     do {
-        if (senha[0] != '\0' || senha2[0] != '\0') {
+        if (i != 0) {
             printf ("\nAs senhas nao coincidem. Digite novamente.\n\n");
-            senha[0] = '\0';
-            senha2[0] = '\0';
         }
-        printf("Digite a senha, com menos que 1024 caracteres (nao sera' exibida):\n");
-        le_senha(senha, 1024 - 1);
+        printf("Digite a senha, com menos que %d caracteres (nao sera' exibida):\n", TAM_BUF_SENHA);
+        le_senha(senha, TAM_BUF_SENHA);
+        hash_128_str(hash_senha1, (char *)senha);
         printf("Digite a senha novamente (nao sera' exibida):\n");
-        le_senha(senha2, 1024 - 1);
-    } while (strcmp((char *)senha, (char *)senha2) != 0);
-    for (i = 1024-1; i >= 0; i--) senha2[i] = 0;
+        le_senha(senha, TAM_BUF_SENHA);
+        hash_128_str(hash_senha2, (char *)senha);
+        for (i = 0; i < 16; i++) {
+            if (hash_senha1[i] != hash_senha2[i]) break;
+        }
+        if (i == 16) i = 0;
+        else i = 1; /* marcar que senhas não coincide */
+    } while (i != 0); /* enquanto senhas não coincidem */
+    for (i = 0; i < 16; i++) hash_senha1[i] = hash_senha2[i] = 0;
 
     salt_aleatorio(salt_384, BLOCK_SIZE_BYTES);
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
@@ -101,7 +108,7 @@ criptografa_arquivo(const char *nome_arq, const char *nome_saida)
         Fputc(salt_384[BLOCK_SIZE_BYTES + i] ^ salt_384[2 * BLOCK_SIZE_BYTES + i], fo);
     }
     pbkdf2(key, KEY_SIZE_BYTES / BLOCK_SIZE_BYTES, senha, strlen((char *)senha), salt_384, 384 / 8, QTD_PBKDF2);
-    for (i = 1024-1; i >= 0; i--) senha[i] = 0;
+    for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
     calcula_subkeys((uint32_t *) key, subkeys);
     for (i = 0; i < KEY_SIZE_BYTES; i++) key[i] = 0;
     hash_128_bytes(bloco_count, salt_384, 384 / 8);
@@ -157,7 +164,7 @@ descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
     uint8_t bytes_conferencia_calculados[2 * BLOCK_SIZE_BYTES];
     uint32_t subkeys[DOIS_R_MAIS_4];
     uint8_t salt_384[3 * BLOCK_SIZE_BYTES];
-    uint8_t senha[1024];
+    uint8_t senha[TAM_BUF_SENHA];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
     fi = fopen(nome_arq, "rb");
@@ -188,8 +195,8 @@ descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
 
     for(;;) {
         senha[0] = '\0';
-        printf("Digite a senha (menos que 1024 caracteres). A senha nao sera' exibida:\n");
-        le_senha(senha, 1024 - 1);
+        printf("Digite a senha (menos que %d caracteres). A senha nao sera' exibida:\n", TAM_BUF_SENHA);
+        le_senha(senha, TAM_BUF_SENHA);
         pbkdf2(bytes_conferencia_calculados, 2, senha, strlen((char *) senha),
             salt_inicial, BLOCK_SIZE_BYTES,QTD_PBKDF2
         );
@@ -210,7 +217,7 @@ descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
     pbkdf2(key, KEY_SIZE_BYTES / BLOCK_SIZE_BYTES, senha, strlen((char *)senha),
         salt_384, 384 / 8, QTD_PBKDF2
     );
-    for (i = 1024-1; i >= 0; i--) senha[i] = 0;
+    for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
     calcula_subkeys((uint32_t *) key, subkeys);
     for (i = 0; i < KEY_SIZE_BYTES; i++) key[i] = 0;
     hash_128_bytes(bloco_count, salt_384, 384 / 8);

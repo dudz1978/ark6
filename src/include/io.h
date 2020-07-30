@@ -30,10 +30,14 @@ For more information, please refer to <http://unlicense.org/>
 
 /* #define OS_LINUX */
 
+#define CHR_BEEP (7)
 #define CHR_BACKSPACE (8)
 #define CHR_LF (10)
 #define CHR_CR (13)
 #define CHR_ESC (27)
+
+#define TAM_BUF_SENHA (65536)
+
 
 /* Versão bufferizada de fgetc.
 Para iniciar, chamar com o fd do arquivo.
