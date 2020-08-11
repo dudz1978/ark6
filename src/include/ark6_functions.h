@@ -28,14 +28,16 @@ For more information, please refer to <http://unlicense.org/>
 #ifndef __ark6_functions_h_
 #define __ark6_functions_h_
 
-uint32_t
-rot_e(uint32_t v, uint32_t n);
+#include "ark6_types.h"
+
+uintw_t
+rot_e(uintw_t v, uintw_t n);
 
 void
-calcula_subkeys(const uint32_t L_[KEY_SIZE_WORDS], uint32_t S[DOIS_R_MAIS_4]);
+calcula_subkeys(const uintw_t L_[KEY_SIZE_WORDS], uintw_t S[DOIS_R_MAIS_4]);
 
 void
-ark6(uint32_t *pa, uint32_t *pb, uint32_t *pc, uint32_t *pd, const uint32_t S[DOIS_R_MAIS_4]);
+ark6(uintw_t *pa, uintw_t *pb, uintw_t *pc, uintw_t *pd, const uintw_t S[DOIS_R_MAIS_4]);
 
 /* Criptografa block usando chave key */
 uint8_t *
@@ -47,11 +49,11 @@ ark6_output_block_key(uint8_t *output, const uint8_t *block, const uint8_t *key)
 
 /* Criptografa block usando subchaves S */
 uint8_t *
-ark6_block_subkeys(uint8_t *block, const uint32_t S[DOIS_R_MAIS_4]);
+ark6_block_subkeys(uint8_t *block, const uintw_t S[DOIS_R_MAIS_4]);
 
 /* Criptografa block usando subchaves S, com saída em output. */
 uint8_t *
 ark6_output_block_subkeys(uint8_t output[BLOCK_SIZE_BYTES],
-    const uint8_t *block, const uint32_t S[DOIS_R_MAIS_4]);
+    const uint8_t *block, const uintw_t S[DOIS_R_MAIS_4]);
 
 #endif

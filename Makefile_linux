@@ -45,7 +45,7 @@ all: ./bin/ark6
 
 install: ./bin/ark6
 	rm -f /usr/bin/ark6 2> /dev/null
-	ln ./bin/ark6 /usr/bin/ark6
+	cp ./bin/ark6 /usr/bin/ark6
 	chmod 555 /usr/bin/ark6
 
 clean:

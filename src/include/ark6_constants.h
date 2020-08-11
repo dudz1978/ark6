@@ -34,32 +34,36 @@ For more information, please refer to <http://unlicense.org/>
 
 #define QTD_PBKDF2 (16384)
 
-#define W (32)
-#define NIBBLE_SIZE (W >> 1)
-#define B (32)
 
-#define BLOCK_SIZE_BITS (128)
-#define BLOCK_SIZE_BYTES (BLOCK_SIZE_BITS >> 3)
-#define BLOCK_SIZE_WORDS (BLOCK_SIZE_BITS / W)
 
 
 #ifndef RC6_MODE
+#define ARK6_W (64) /* word size */
+#define ARK6_LOG2_W (6)
 #define KEY_SIZE_BITS (512)
-#define P ((uint32_t) 0x90fdaa23) /* bits de pi (deslocado para usar 32 bits) */
-#define Q ((uint32_t) 0xd413cccf) /* bits de sqrt(2) (deslocado para usar 32 bits) */
-#define R (40)
+#define BLOCK_SIZE_BITS (256)
+#define ARK6_P ((uint64_t) 0x90fdaa22168c234dU) /* bits de pi (deslocado para usar 64 bits) */
+#define ARK6_Q ((uint64_t) 0xd413cccfe7799211U) /* bits de sqrt(2) (deslocado para usar 64 bits) */
+#define ARK6_R (40)
 #else
+#define ARK6_W (32) /* word size */
+#define ARK6_LOG2_W (5)
 #define KEY_SIZE_BITS (256)
-#define P ((uint32_t) 0xb7e15163) /* bits de e (número de Euler) */
-#define Q ((uint32_t) 0x9e3779b9) /* bits da razão áurea */
-#define R (20)
+#define BLOCK_SIZE_BITS (128)
+#define ARK6_P ((uint32_t) 0xb7e15163) /* bits de e (número de Euler) */
+#define ARK6_Q ((uint32_t) 0x9e3779b9) /* bits da razão áurea */
+#define ARK6_R (20)
 #endif
 
-#define KEY_SIZE_BYTES (KEY_SIZE_BITS >> 3)
-#define KEY_SIZE_WORDS (KEY_SIZE_BITS / W)
-#define C KEY_SIZE_WORDS
+#define NIBBLE_SIZE (ARK6_W >> 1)
+#define BLOCK_SIZE_BYTES (BLOCK_SIZE_BITS >> 3)
+#define BLOCK_SIZE_WORDS (BLOCK_SIZE_BITS / ARK6_W)
 
-#define DOIS_R_MAIS_4 (2 * R + 4)
-#define V (3 * DOIS_R_MAIS_4) /* V = 3 * max(C, DOIS_R_MAIS_4) */
+#define KEY_SIZE_BYTES (KEY_SIZE_BITS >> 3)
+#define KEY_SIZE_WORDS (KEY_SIZE_BITS / ARK6_W)
+#define ARK6_C KEY_SIZE_WORDS
+
+#define DOIS_R_MAIS_4 (2 * ARK6_R + 4)
+#define ARK6_V (3 * DOIS_R_MAIS_4) /* V = 3 * max(C, DOIS_R_MAIS_4) */
 
 #endif

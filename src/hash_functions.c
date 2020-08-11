@@ -32,16 +32,23 @@ For more information, please refer to <http://unlicense.org/>
 #include "include/ark6_constants.h"
 #include "include/ark6_functions.h"
 
-/* Gera hash de 128 bits.
+/* OBS: as funções deste arquivo funcionam exclusivamente com o Ark6, já que para
+conseguirem hash de 256 bits precisam de bloco do mesmo tamanho.
+Um hash de 256 bits com RC6 pode ser feito usando um PBKDF2 interno com apenas
+um passo, mas não será implementado aqui, já que o modo RC6 serve
+apenas para confirmar que a implementação da criptografia está correta.
+ */
+
+/* Gera hash de 256 bits.
 Algoritmo: começar com tamanho em bits (big-endian, até 64 bits)
 depois os bits, com o último com append 1000...000, com pelo
 menos o bit 1 obrigatório (mesmo que abra mais um bloco inteiro).
 Cada KEY_SIZE_BITS bits do texto é chave usada na criptografia do bloco
 hash anterior, e o
-hash inicial é formado por 128 (BLOCK_SIZE_BITS) bits zero.
+hash inicial é formado por 256 (BLOCK_SIZE_BITS) bits zero.
 */
 uint8_t *
-hash_128_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bits)
+hash_256_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bits)
 {
     int i;
     int pos, pos_key;
@@ -50,6 +57,12 @@ hash_128_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bit
     uint8_t ultimo_byte_nao_zero;
     int ultima_posicao;
     uint8_t ui8;
+
+#ifdef RC6_MODE
+    fprintf(stderr, "\nFuncoes hash_256 nao devem ser usadas com RC6_MODE.\n");
+    exit(1);
+#endif
+
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
         hash[i] = 0;
     }
@@ -72,7 +85,7 @@ hash_128_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bit
         }
     }
     i = (qtd_bits & 0x7);
-    if (i == 0) {
+    if (i == 0) { /* se 0, a quantidade de bits é multipla de 8 */
         if (ultima_posicao >= 0) { /* impede pegar byte [-1] se qtd_bits==0 */
             key[pos_key++] = v[ultima_posicao];
             if (pos_key == KEY_SIZE_BYTES) {
@@ -117,24 +130,29 @@ hash_128_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bit
 }
 
 uint8_t *
-hash_128_bytes(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bytes)
+hash_256_bytes(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bytes)
 {
-    uint8_t *r = hash_128_bits(hash, v, qtd_bytes << 3);
+    uint8_t *r = hash_256_bits(hash, v, qtd_bytes << 3);
     qtd_bytes = 0;
     return r;
 }
 
 uint8_t *
-hash_128_str(uint8_t hash[BLOCK_SIZE_BYTES], const char *str)
+hash_256_str(uint8_t hash[BLOCK_SIZE_BYTES], const char *str)
 {
-    return hash_128_bytes(hash, (uint8_t *) str, strlen(str));
+    return hash_256_bytes(hash, (uint8_t *) str, strlen(str));
 }
 
 /* Função auxiliar para pbkdf2 */
 static uint8_t *
 pbkdf2_t(uint8_t *key_parc /* com BLOCK_SIZE_BYTES */,
-    const uint8_t *senha, int tam_senha, const uint8_t *salt, int tam_salt, int c,
-    int num_iteracao, uint8_t *area_aux
+    const uint8_t *senha,
+    int tam_senha,
+    const uint8_t *salt,
+    int tam_salt,
+    int qtd_ciclos,
+    int num_iteracao,
+    uint8_t *area_aux
 )
 {
     int i;
@@ -142,72 +160,107 @@ pbkdf2_t(uint8_t *key_parc /* com BLOCK_SIZE_BYTES */,
     uint32_t ui32;
     uint8_t ui[2][BLOCK_SIZE_BYTES];
     int pos = 0;
+
+#ifdef RC6_MODE
+    fprintf(stderr, "\nFuncao pbkdf2_t nao deve ser usadas com RC6_MODE.\n");
+    exit(1);
+#endif
+
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) key_parc[i] = 0;
     if (tam_salt > 0) {
         memcpy(area_aux, salt, tam_salt);
     }
     ui32 = num_iteracao;
-    for (i = tam_salt + 3; i >= tam_salt; i--) {
+    for (i = tam_salt + 3; i >= tam_salt; i--) { /* número da iteração em UINT32_BIG_ENDIAN */
         area_aux[i] = (uint8_t)(ui32 & 0xffU);
         ui32 >>= 8;
     }
-    hash_128_bytes(ui[pos], area_aux, tam_salt + 4);
+    hash_256_bytes(ui[pos], area_aux, tam_salt + 4); /* Valor U0 extra */
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) key_parc[i] ^= ui[pos][i];
-    pos = 1 - pos;
+    pos ^= 1;
     memcpy(area_aux, senha, tam_senha);
-    tam_hash_ui = tam_senha + BLOCK_SIZE_BYTES;
-    while (c > 0) {
-        memcpy(&area_aux[tam_senha], ui[1 - pos], BLOCK_SIZE_BYTES);
-        hash_128_bytes(ui[pos], area_aux, tam_hash_ui);
+    tam_hash_ui = tam_senha + BLOCK_SIZE_BYTES; /* tamanho das iterações U_i para i=1..qtd_ciclos */
+    while (qtd_ciclos > 0) {
+        memcpy(&area_aux[tam_senha], ui[pos ^ 1], BLOCK_SIZE_BYTES);
+        hash_256_bytes(ui[pos], area_aux, tam_hash_ui);
         for (i = 0; i < BLOCK_SIZE_BYTES; i++) key_parc[i] ^= ui[pos][i];
-        pos = 1 - pos;
-        c--;
+        pos ^= 1;
+        qtd_ciclos--;
     }
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) ui[0][i] = ui[1][i] = 0;
+    pos = 0;
     tam_senha = 0;
     tam_salt = 0;
     tam_hash_ui = 0;
     ui32 = 0;
-    c = 0;
+    qtd_ciclos = 0;
     return key_parc;
 }
 
 /*
-Gera chave de 128*qtd_blocos_senha bits com c iterações.
-Usa senha de tam_senha bytes.
+Gera chave de qtd_bytes_chave com c iterações.
+Usa senha de tam_senha_bytes bytes.
 O valor de U0 será o hash de (salt + uint32_be(i)).
 O valor de U_j é hash de (senha + U_(j-1)), para j=1..c.
 O xor de todos o Uj (incluindo o 0) é Ti, e as concatenações de Ti
 (para i=1..2) é a chave derivada (key).
 */
 uint8_t *
-pbkdf2(uint8_t key[KEY_SIZE_BYTES], const int qtd_blocos_senha, const uint8_t *senha,
-    int tam_senha, const uint8_t *salt, int tam_salt, int c
+pbkdf2(uint8_t *key, int qtd_bytes_chave,
+    const uint8_t *senha, int tam_senha_bytes,
+    const uint8_t *salt, int tam_salt,
+    int c /* quantidade iterações */
 )
 {
-    int i;
+    int i, j;
     uint8_t *area_aux;
+    uint8_t bloco[BLOCK_SIZE_BYTES];
     int tam_aux;
+    int qtd_blocos_senha;
+
+#ifdef RC6_MODE
+    fprintf(stderr, "\nFuncao pbkdf2 nao deve ser usadas com RC6_MODE.\n");
+    exit(1);
+#endif
+
     tam_aux = tam_salt + 4;
-    if (tam_senha + BLOCK_SIZE_BYTES > tam_aux) {
-        tam_aux = tam_senha + BLOCK_SIZE_BYTES;
+    if (tam_senha_bytes + BLOCK_SIZE_BYTES > tam_aux) {
+        tam_aux = tam_senha_bytes + BLOCK_SIZE_BYTES;
     }
     area_aux = (uint8_t *) malloc(tam_aux);
     if (area_aux == NULL) {
         fprintf(stderr, "Sem memoria.\n");
         exit(1);
     }
-    for (i = 0; i < qtd_blocos_senha; i++) {
-        pbkdf2_t(&key[i * BLOCK_SIZE_BYTES], senha, tam_senha, salt, tam_salt, c, i + 1, area_aux);
+    qtd_blocos_senha = qtd_bytes_chave / BLOCK_SIZE_BYTES;
+    if (qtd_blocos_senha * BLOCK_SIZE_BYTES > qtd_bytes_chave) {
+        qtd_blocos_senha++;
     }
+    i = 0;
+    while (i < qtd_blocos_senha) {
+        pbkdf2_t(bloco, senha, tam_senha_bytes, salt, tam_salt, c, i + 1, area_aux);
+        if (i != qtd_blocos_senha - 1) { /* último bloco não é copiado inteiro*/
+            memcpy(&key[i * BLOCK_SIZE_BYTES], bloco, BLOCK_SIZE_BYTES);
+        }
+        i++;
+    }
+    /* ultimo bloco pode nao ser multiplo de BLOCK_SIZE_BYTES */
+    i = (qtd_blocos_senha - 1) * BLOCK_SIZE_BYTES;
+    j = 0;
+    while (i < qtd_bytes_chave) {
+        key[i] = bloco[j];
+        i++;
+        j++;
+    }
+    for (i = 0; i < BLOCK_SIZE_BYTES; i++) bloco[i] = 0;
     for (i = 0; i < tam_aux; i++) area_aux[i] = 0;
     free (area_aux);
-    tam_senha = 0;
+    j = 0;
+    tam_senha_bytes = 0;
     tam_salt = 0;
     tam_aux = 0;
+    qtd_bytes_chave = 0;
     c = 0;
     return key;
 }
-
-
 

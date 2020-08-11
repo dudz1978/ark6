@@ -30,8 +30,28 @@ For more information, please refer to <http://unlicense.org/>
 
 /* #define OS_LINUX */
 
+#include <stdbool.h>
+
+#ifndef OS_LINUX
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+#endif
+
+#ifndef __EM_IO_C_
+extern bool entrada_padrao;
+extern bool saida_padrao;
+extern FILE *fprint;
+#endif
+
+void binary_stdout(void);
+void binary_stdin(void);
+
 #define CHR_BEEP (7)
 #define CHR_BACKSPACE (8)
+#define CHR_BACKSPACE_LINUX (127) /* Linux tem um bug (ninguém me convence que */
+                                  /* não é bug) que troca por 127 em vez de 8 */
 #define CHR_LF (10)
 #define CHR_CR (13)
 #define CHR_ESC (27)
@@ -54,7 +74,7 @@ void
 Fputc(int ch, FILE *fd);
 
 uint8_t *
-salt_aleatorio(uint8_t *salt, const int qtd_bytes);
+salt_aleatorio(uint8_t *salt, const int qtd_bytes, int argc, char *argv[], char *envp[]);
 
 uint8_t *
 le_senha(uint8_t *senha, int tam_max);

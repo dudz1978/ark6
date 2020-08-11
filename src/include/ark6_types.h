@@ -25,37 +25,16 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 */
 
-#ifndef __hash_functions_h_
-#define __hash_functions_h_
+#ifndef __ark6_types_h_
+#define __ark6_types_h_
 
-/* Gera hash de BLOCK_SIZE bits.
-Algoritmo: começar com tamanho em bits (big-endian, até 64 bits)
-depois os bits, com o último com append 1000...000, com pelo
-menos o bit 1 obrigatório (mesmo que abra mais um bloco inteiro).
-Cada KEY_SIZE_BITS bits do texto é chave usada na criptografia do bloco
-hash anterior, e o
-hash inicial é formado por BLOCK_SIZE_BITS bits zero.
-*/
-uint8_t *
-hash_256_bits(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bits);
+#include <stdint.h>
+#include "ark6_constants.h"
 
-uint8_t *
-hash_256_bytes(uint8_t hash[BLOCK_SIZE_BYTES], const uint8_t *v, uint64_t qtd_bytes);
-
-uint8_t *
-hash_256_str(uint8_t hash[BLOCK_SIZE_BYTES], const char *str);
-
-/*
-Gera chave de qtd_bytes com c iterações.
-Usa senha de tam_senha bytes.
-O valor de U0 será o hash de (salt + uint32_be(i)).
-O valor de U_j é hash de (senha + U_(j-1)), para j=1..c.
-O xor de todos o Uj (incluindo o 0) é Ti, e as concatenações de Ti
-(para i=1..2) é a chave derivada (key).
-*/
-uint8_t *
-pbkdf2(uint8_t key[KEY_SIZE_BYTES], const int qtd_bytes, const uint8_t *senha,
-    int tam_senha, const uint8_t *salt, int tam_salt, int c
-);
+#ifndef RC6_MODE
+typedef uint64_t uintw_t;
+#else
+typedef uint32_t uintw_t;
+#endif
 
 #endif

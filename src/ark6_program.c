@@ -29,10 +29,13 @@ For more information, please refer to <http://unlicense.org/>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <time.h>
 #include "include/io.h"
 #include "include/ark6_constants.h"
 #include "include/ark6_functions.h"
 #include "include/hash_functions.h"
+
 
 void
 incrementa_contador(uint8_t bloco_count[BLOCK_SIZE_BYTES])
@@ -50,69 +53,78 @@ incrementa_contador(uint8_t bloco_count[BLOCK_SIZE_BYTES])
 }
 
 void
-criptografa_arquivo(const char *nome_arq, const char *nome_saida)
+criptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando,
+    int argc, char *argv[], char *envp[]
+)
 {
     int i;
-    FILE *fi;
-    FILE *fo;
     int ch;
     int pos_bloco;
-    uint32_t subkeys[DOIS_R_MAIS_4];
-    uint8_t salt_384[3 * BLOCK_SIZE_BYTES];
+    uintw_t subkeys[DOIS_R_MAIS_4];
+    uint8_t salt_384[48];
     uint8_t senha[TAM_BUF_SENHA];
-    uint8_t hash_senha1[16];
-    uint8_t hash_senha2[16];
+    uint8_t hash_senha1[BLOCK_SIZE_BYTES];
+    uint8_t hash_senha2[BLOCK_SIZE_BYTES];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
-    uint32_t tam_entrada;
-    uint32_t qtd_tratados;
-    uint32_t cont_impressao;
-    fi = fopen(nome_arq, "rb");
-    if (fi == NULL) {
-        fprintf (stderr, "Erro ao abrir arquivo de entrada.\n");
-        exit (1);
-    }
-    fo = fopen(nome_saida, "wb");
-    if (fo == NULL) {
-        fclose(fi);
-        fprintf (stderr, "Erro ao criar arquivo de saida.\n");
-        exit (1);
-    }
+    uint64_t tam_entrada;
+    uint64_t qtd_tratados;
+    uint64_t cont_impressao;
+#ifdef RC6_MODE
+fprintf(stderr, "Funcao criptografa_arquivo() nao deve ser usada no modo RC6.\n");
+exit(1);
+#endif
     
-    senha[0] = '\0';
-    i = 0; /* marcar que nao digitou nenhuma ainda */
-    do {
-        if (i != 0) {
-            printf ("\nAs senhas nao coincidem. Digite novamente.\n\n");
+    if (senha_comando == NULL) {
+        senha[0] = '\0';
+        i = 0; /* marcar que nao digitou nenhuma ainda */
+        do {
+            if (i != 0) {
+                fprintf (fprint, "\nAs senhas nao coincidem. Digite novamente.\n\n");
+            }
+            fprintf(fprint, "Digite a senha, com menos que %d caracteres (nao sera' exibida):\n", TAM_BUF_SENHA);
+            le_senha(senha, TAM_BUF_SENHA);
+            hash_256_str(hash_senha1, (char *)senha);
+            fprintf(fprint, "Digite a senha novamente (nao sera' exibida):\n");
+            le_senha(senha, TAM_BUF_SENHA);
+            hash_256_str(hash_senha2, (char *)senha);
+            for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
+                if (hash_senha1[i] != hash_senha2[i]) break;
+            }
+            if (i == BLOCK_SIZE_BYTES) i = 0;
+            else i = 1; /* marcar que senhas não coincide */
+        } while (i != 0); /* enquanto senhas não coincidem */
+        for (i = 0; i < BLOCK_SIZE_BYTES; i++) hash_senha1[i] = hash_senha2[i] = 0;
+    }
+    else {
+        if ((i = strlen(senha_comando) >= TAM_BUF_SENHA)) {
+            fprintf(stderr, "Erro: Senha muito grande.\n");
+            for (; i >= 0; i--) senha_comando[i] = 0;
+            exit(1);
         }
-        printf("Digite a senha, com menos que %d caracteres (nao sera' exibida):\n", TAM_BUF_SENHA);
-        le_senha(senha, TAM_BUF_SENHA);
-        hash_128_str(hash_senha1, (char *)senha);
-        printf("Digite a senha novamente (nao sera' exibida):\n");
-        le_senha(senha, TAM_BUF_SENHA);
-        hash_128_str(hash_senha2, (char *)senha);
-        for (i = 0; i < 16; i++) {
-            if (hash_senha1[i] != hash_senha2[i]) break;
-        }
-        if (i == 16) i = 0;
-        else i = 1; /* marcar que senhas não coincide */
-    } while (i != 0); /* enquanto senhas não coincidem */
-    for (i = 0; i < 16; i++) hash_senha1[i] = hash_senha2[i] = 0;
+        strcpy((char *) senha, senha_comando); /* limpar senha_comando apos coletar entropia */
+    }
 
-    salt_aleatorio(salt_384, BLOCK_SIZE_BYTES);
-    for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
+    /* limpar a senha do comando só depois de coletar a entropia, porque toda a linha de comando também
+        é usada, junto com variáveis de ambiente.
+     */
+    salt_aleatorio(salt_384, 16, argc, argv, envp); /* salt aleatório inicial do arquivo, com 128 bits */
+    if (senha_comando != NULL) {
+        for (i = strlen(senha_comando); i >= 0; i--) senha_comando[i] = 0;
+    }
+    for (i = 0; i < 16; i++) {
         Fputc(salt_384[i], fo);
     }
-    pbkdf2(&salt_384[BLOCK_SIZE_BYTES], 2, senha, strlen((char *)senha), salt_384, BLOCK_SIZE_BYTES, QTD_PBKDF2);
-    for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
-        Fputc(salt_384[BLOCK_SIZE_BYTES + i] ^ salt_384[2 * BLOCK_SIZE_BYTES + i], fo);
+    pbkdf2(&salt_384[16], 32, senha, strlen((char *)senha), salt_384, 16, QTD_PBKDF2);
+    for (i = 0; i < 16; i++) { /* gravação 128 bits da conferência de senha */
+        Fputc(salt_384[16 + i] ^ salt_384[32 + i], fo);
     }
-    pbkdf2(key, KEY_SIZE_BYTES / BLOCK_SIZE_BYTES, senha, strlen((char *)senha), salt_384, 384 / 8, QTD_PBKDF2);
+    pbkdf2(key, KEY_SIZE_BYTES, senha, strlen((char *)senha), salt_384, 384 / 8, QTD_PBKDF2);
     for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
-    calcula_subkeys((uint32_t *) key, subkeys);
+    calcula_subkeys((uintw_t *) key, subkeys);
     for (i = 0; i < KEY_SIZE_BYTES; i++) key[i] = 0;
-    hash_128_bytes(bloco_count, salt_384, 384 / 8);
-    for (i = 3 * BLOCK_SIZE_BYTES; i > 0; i--) salt_384[i - 1] = 0;
+    hash_256_bytes(bloco_count, salt_384, 384 / 8);
+    for (i = 384 / 8; i > 0; i--) salt_384[i - 1] = 0;
     pos_bloco = BLOCK_SIZE_BYTES;
     fseek(fi, 0, SEEK_END);
     tam_entrada = ftell(fi);
@@ -131,16 +143,14 @@ criptografa_arquivo(const char *nome_arq, const char *nome_saida)
         pos_bloco++;
         qtd_tratados++;
         if (cont_impressao-- == 0) {
-            printf("\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
-            fflush(stdout);
+            fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
+            fflush(fprint);
             cont_impressao = tam_entrada / 100 - 1;
         }
     }
-    printf("\r100%%\n");
+    fprintf(fprint, "\r100%%\n");
     Fputc(0, NULL); /* flush do que está no buffer */
     fflush(fo);
-    fclose (fo);
-    fclose(fi);
     fi = fo = NULL;
     ch = 0;
     pos_bloco = 0;
@@ -149,79 +159,92 @@ criptografa_arquivo(const char *nome_arq, const char *nome_saida)
 }
 
 void
-descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
+descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando)
 {
     int i;
-    FILE *fi;
-    FILE *fo;
     int ch;
     int pos_bloco;
-    uint32_t tam_entrada;
-    uint32_t qtd_tratados;
-    uint32_t cont_impressao;
+    uint64_t tam_entrada;
+    uint64_t qtd_tratados;
+    uint64_t cont_impressao;
     uint8_t salt_inicial[BLOCK_SIZE_BYTES];
     uint8_t bytes_conferencia[BLOCK_SIZE_BYTES];
     uint8_t bytes_conferencia_calculados[2 * BLOCK_SIZE_BYTES];
-    uint32_t subkeys[DOIS_R_MAIS_4];
+    uintw_t subkeys[DOIS_R_MAIS_4];
     uint8_t salt_384[3 * BLOCK_SIZE_BYTES];
     uint8_t senha[TAM_BUF_SENHA];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
-    fi = fopen(nome_arq, "rb");
-    if (fi == NULL) {
-        fprintf (stderr, "Erro ao abrir arquivo de entrada.\n");
-        exit (1);
-    }
-    fo = fopen(nome_saida, "wb");
-    if (fo == NULL) {
-        fclose(fi);
-        fprintf (stderr, "Erro ao criar arquivo de saida.\n");
-        exit (1);
-    }
-    
+#ifdef RC6_MODE
+fprintf(stderr, "Funcao descriptografa_arquivo() nao deve ser usada no modo RC6.\n");
+exit(1);
+#endif
     fseek(fi, 0, SEEK_END);
     tam_entrada = ftell(fi);
     fseek(fi, 0, SEEK_SET);
-    if (tam_entrada <= 2 * BLOCK_SIZE_BYTES) {
+    if (tam_entrada <= 32) { /* salt (128) e conferencia (128) */
         tam_entrada = 0;
     }
 
-    for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
+    for (i = 0; i < 16; i++) {
         salt_inicial[i] = (uint8_t) (Fgetc(fi) & 0xffU);
     }
-    for (i = 0; i < BLOCK_SIZE_BYTES; i++) {
+    for (i = 0; i < 16; i++) {
         bytes_conferencia[i] = (uint8_t) (Fgetc(fi) & 0xffU);
     }
 
-    for(;;) {
-        senha[0] = '\0';
-        printf("Digite a senha (menos que %d caracteres). A senha nao sera' exibida:\n", TAM_BUF_SENHA);
-        le_senha(senha, TAM_BUF_SENHA);
-        pbkdf2(bytes_conferencia_calculados, 2, senha, strlen((char *) senha),
-            salt_inicial, BLOCK_SIZE_BYTES,QTD_PBKDF2
-        );
+    if (senha_comando == NULL) {
+        for(;;) {
+            senha[0] = '\0';
+            fprintf(fprint, "Digite a senha (menos que %d caracteres). A senha nao sera' exibida:\n", TAM_BUF_SENHA);
+            le_senha(senha, TAM_BUF_SENHA);
+            pbkdf2(bytes_conferencia_calculados, 32, senha, strlen((char *) senha),
+                salt_inicial, 16, QTD_PBKDF2
+            );
+            i = 0;
+            while (i < 16) {
+                if (bytes_conferencia[i] !=
+                    (bytes_conferencia_calculados[i] ^ bytes_conferencia_calculados[i + 16])
+                ) break;
+                i++;
+            }
+            if (i == 16) break;
+            fprintf (fprint, "SENHA INCORRETA.\n");
+        }
+    }
+    else {
+        if ((i = strlen(senha_comando) >= TAM_BUF_SENHA)) {
+            fprintf(stderr, "Erro: Senha muito grande.\n");
+            for (; i >= 0; i--) senha_comando[i] = 0;
+            exit(1);
+        }
+        strcpy((char *) senha, senha_comando);
+        for (; i >= 0; i--) senha_comando[i] = 0;
+        pbkdf2(bytes_conferencia_calculados,32,senha,strlen((char *)senha),salt_inicial,16,QTD_PBKDF2);
         i = 0;
-        while (i < BLOCK_SIZE_BYTES) {
+        while (i < 16) {
             if (bytes_conferencia[i] !=
-                (bytes_conferencia_calculados[i] ^ bytes_conferencia_calculados[i + BLOCK_SIZE_BYTES])
+                (bytes_conferencia_calculados[i] ^ bytes_conferencia_calculados[i + 16])
             ) break;
             i++;
         }
-        if (i == BLOCK_SIZE_BYTES) break;
-        printf ("SENHA INCORRETA.\n");
+        if (i != 16) {
+            fprintf (fprint, "SENHA INCORRETA.\n");
+            exit(1);
+        }
     }
 
-    memcpy (salt_384, salt_inicial, BLOCK_SIZE_BYTES);
-    memcpy (&salt_384[BLOCK_SIZE_BYTES], bytes_conferencia_calculados, 2 * BLOCK_SIZE_BYTES);
+    memcpy (salt_384, salt_inicial, 16);
+    memcpy (&salt_384[16], bytes_conferencia_calculados, 2 * 16);
     for (i = 0; i < 2 * BLOCK_SIZE_BYTES; i++) bytes_conferencia_calculados[i] = 0;
-    pbkdf2(key, KEY_SIZE_BYTES / BLOCK_SIZE_BYTES, senha, strlen((char *)senha),
+    pbkdf2(key, KEY_SIZE_BYTES, senha, strlen((char *)senha),
         salt_384, 384 / 8, QTD_PBKDF2
     );
     for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
-    calcula_subkeys((uint32_t *) key, subkeys);
+    calcula_subkeys((uintw_t *) key, subkeys);
     for (i = 0; i < KEY_SIZE_BYTES; i++) key[i] = 0;
-    hash_128_bytes(bloco_count, salt_384, 384 / 8);
-    for (i = 3 * BLOCK_SIZE_BYTES; i > 0; i--) salt_384[i - 1] = 0;
+    hash_256_bytes(bloco_count, salt_384, 384 / 8);
+    for (i = 384 / 8; i > 0; i--) salt_384[i - 1] = 0;
     pos_bloco = BLOCK_SIZE_BYTES;
     qtd_tratados = 0;
     cont_impressao = tam_entrada / 100 - 1;
@@ -237,16 +260,14 @@ descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
         pos_bloco++;
         qtd_tratados++;
         if (cont_impressao-- == 0) {
-            printf("\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
-            fflush(stdout);
+            fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
+            fflush(fprint);
             cont_impressao = tam_entrada / 100 - 1;
         }
     }
-    printf("\r100%%\n");
+    fprintf(fprint, "\r100%%\n");
     Fputc(0, NULL); /* flush do que está no buffer */
     fflush(fo);
-    fclose(fo);
-    fclose(fi);
     fi = fo = NULL;
     ch = 0;
     pos_bloco = 0;
@@ -257,8 +278,12 @@ descriptografa_arquivo(const char *nome_arq, const char *nome_saida)
 
 
 int
-main(int argc, char *argv[])
+main(int argc, char *argv[], char *envp[])
 {
+    FILE *fi;
+    FILE *fo;
+    (void) clock(); /* para iniciar contador e coletar entropia */
+
     /* Teste padrão se RC6(w=32,r=20,b=32) está ok
     int i;
     uint8_t text[BLOCK_SIZE_BYTES];
@@ -270,30 +295,99 @@ main(int argc, char *argv[])
     putchar('\n');
     for (i = 0; i < BLOCK_SIZE_BYTES; i++) printf("%02x", text[i]);
     putchar('\n');
+    exit(0);
     //*/
 
-    if (argc != 4 || argv[1][0] != '-' || (argv[1][1] != 'c' && argv[1][1] != 'd')
+    if ((argc != 4 && argc != 5) || argv[1][0] != '-'
+        || (argv[1][1] != 'c' && argv[1][1] != 'd')
         || strcmp(argv[2], argv[3]) == 0
     ) {
         printf (
                 "Sintaxe:\n"
-                "       cifrar: ark6 -c arq_entrada_legivel.ext arq_saida_cifrado.ext\n"
-                "     decifrar: ark6 -d arq_entrada_cifrado.ext arq_saida_decifrado_legivel.ext\n"
+                "       cifrar: ark6 -c arq_entrada_legivel.ext arq_saida_cifrado.ext [senha]\n"
+                "     decifrar: ark6 -d arq_entrada_cifrado.ext arq_saida_decifrado_legivel.ext [senha]\n"
+                "Para usar entrada/saida padroes, usar --stdin e/ou\n"
+                "--stdout no lugar dos nomes dos arquivos.\n"
+                "Se a entrada for stdin, e' obrigatorio informar a senha no comando.\n"
         );
         printf("\nPressione Enter...");
         fflush (stdout);
         (void) getchar();
         exit(0);
     }
-    verifica_existencia_saida(argv[3]);
-    if (argv[1][1] == 'c') {
-        criptografa_arquivo(argv[2], argv[3]);
+
+    if (strcmp(argv[2], "--stdin") != 0) {
+        entrada_padrao = false;
+        fi = fopen(argv[2], "rb");
+        if (fi == NULL) {
+            fprintf (stderr, "Erro ao abrir arquivo de entrada.\n");
+            exit (1);
+        }
     }
-    else if (argv[1][1] == 'd') {
-        descriptografa_arquivo(argv[2], argv[3]);
+    else {
+        entrada_padrao = true;
+        if (argc < 5) {
+            fprintf(stderr, "Entrada stdin precisa da senha na linha de comando.\n");
+            exit(1);
+        }
+        binary_stdin();
+        fi = stdin;
     }
 
-    printf("Fim normal.\n");
+    if (strcmp(argv[3], "--stdout") != 0) {
+        saida_padrao = false;
+        fprint = stdout;
+#if 0
+ ifndef OS_LINUX
+        fprint = freopen("CON", "w", stderr); /*Mingw C++; Windows*/ 
+ else
+        fprint = freopen("/dev/tty", "w", stderr); /*for gcc, ubuntu*/  
+  endif
+#endif
+        verifica_existencia_saida(argv[3]);
+        fo = fopen(argv[3], "wb");
+        if (fo == NULL) {
+            if (! entrada_padrao) fclose(fi);
+            fprintf (stderr, "Erro ao criar arquivo de saida.\n");
+            exit (1);
+        }
+    }
+    else {
+        saida_padrao = true;
+        fprint = stderr;
+#if 0
+ifndef OS_LINUX
+        fprint = freopen("CON", "w", stderr); /*Mingw C++; Windows*/ 
+else
+        fprint = freopen("/dev/tty", "w", stderr); /*for gcc, ubuntu*/  
+endif
+#endif
+        binary_stdout();
+        fo = stdout; // nao esta funcionando... */
+#if 0
+ifndef OS_LINUX
+        fo = freopen("CON", "wb", stdout); /*Mingw C++; Windows*/ 
+else
+        fo = freopen("/dev/tty", "w", stdout); /*for gcc, ubuntu*/  
+endif
+#endif
+        if (fo == NULL) {
+            if (! entrada_padrao) fclose(fi);
+            fprintf (stderr, "Erro ao configurar saida padrao.\n");
+            exit (1);
+        }
+    }
+
+    if (argv[1][1] == 'c') {
+        criptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4], argc, argv, envp);
+    }
+    else if (argv[1][1] == 'd') {
+        descriptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4]);
+    }
+
+    fprintf(fprint, "Fim normal.\n");
+    if (! saida_padrao) fclose (fo);
+    if (! entrada_padrao) fclose(fi);
 
     return 0;
 }

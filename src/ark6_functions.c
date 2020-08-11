@@ -33,17 +33,17 @@ melhoria contra ataque de distinção chi^2 (baseada em
     Eduardo Takeo Ueda, 2007
     Routo Terada 
 ).
-O algoritmo Rcom esses parâmetros, C6T(w=32,r=40,b=64), será denominado Ark6.
+O algoritmo RC6 com esses parâmetros, RC6T(w=64,r=40,b=64), será denominado Ark6.
 
 Formato do arquivo .ark6:
 128 bits de salt aleatório
 128 bits do xor das duas metades de
-pbkdf2(prf=hash_128_bytes(), qtd_blocos=2, pass=senha, salt=salt(este anterior), c=16k), para
+pbkdf2(prf=hash_256_bytes(), qtd_bytes=32, pass=senha, salt=salt(este anterior), c=16k), para
 conferência de senha. Isso faz com que tenha 2^128 senhas distintas que levem ao mesmo hash,
 de forma que não saberá qual o correto.
 O salt da geração da chave será os 128+256 bits dos passos anteriores, ou seja,
 o próprio salt é secreto com 384 bits.
-Chave de criptografia é pbkdf2(prf=hash_128_bytes(), qtd_blocos=4, pass=senha, salt=salt_384, c=16k).
+Chave de criptografia é pbkdf2(prf=hash_256_bytes(), qtd_bytes=64, pass=senha, salt=salt_384, c=16k).
 Demais bytes são a criptografia em si no modo counter, com número inicial (nonce) formado
 pelo hash do salt_384 descrito acima, ou seja, o nonce do modo counter também é secreto.
 
@@ -55,75 +55,82 @@ Crescimento do arquivo é fixo de 256 bits = 32 bytes.
 #include <string.h>
 #include <stdint.h>
 #include "include/ark6_constants.h"
+#include "include/ark6_types.h"
 
 
 
-uint32_t
-rot_e(uint32_t v, uint32_t n)
+uintw_t
+rot_e(uintw_t v, uintw_t n)
 {
+#ifndef RC6_MODE
+    n &= 0x3f;
+#else
     n &= 0x1f;
-    return (uint32_t)(((v << n) | (v >> (32 - n))) & 0xffffffffU);
+#endif
+    return (uintw_t)((v << n) | (v >> (ARK6_W - n)));
 }
 
 void
-calcula_subkeys(const uint32_t L_[KEY_SIZE_WORDS], uint32_t S[DOIS_R_MAIS_4])
+calcula_subkeys(const uintw_t L_[KEY_SIZE_WORDS], uintw_t S[DOIS_R_MAIS_4])
 {
     int i, j, s;
-    uint32_t a, b;
-    uint32_t L[C];
+    uintw_t a, b;
+    uintw_t L[ARK6_C];
 
-    for (i = 0; i < C; i++) L[i] = L_[i];
-    S[0] = P;
+    for (i = 0; i < ARK6_C; i++) L[i] = L_[i];
+    S[0] = ARK6_P;
     for (i = 1; i < DOIS_R_MAIS_4; i++) {
-        S[i] = S[i - 1] + Q;
+        S[i] = S[i - 1] + ARK6_Q;
     }
     a = b = 0;
     i = j = 0;
-    for (s = 1; s <= V; s++) {
+    for (s = 1; s <= ARK6_V; s++) {
         a = S[i] = rot_e(S[i] + a + b, 3);
         b = L[j] = rot_e(L[j] + a + b, a + b);
         i = (i + 1) % DOIS_R_MAIS_4;
-        j = (j + 1) % C;
+        j = (j + 1) % ARK6_C;
     }
-    for (i = 0; i < C; i++) L[i] = 0;
+    for (i = 0; i < ARK6_C; i++) L[i] = 0;
 }
 
 #ifndef RC6_MODE
-uint32_t
-T(uint32_t n)
+uint64_t
+T(const uint64_t n)
 {
-    uint32_t n2 = n;
+    uint64_t n2;
     int p = 0;
-    while (n != 0) {
-        p ^= (n & 1);
-        n >>= 1;
+    n2 = n;
+    while (n2 != 0) {
+        p ^= (n2 & 1);
+        n2 >>= 1;
     }
     if (p != 0) {
-        return (0xffffU & (n2 >> NIBBLE_SIZE)) | (0xffff0000U & (n2 << NIBBLE_SIZE));
+        return (n >> NIBBLE_SIZE) | (n << NIBBLE_SIZE);
     }
-    return n2;
+    return n;
 }
 #endif
 
 void
-ark6(uint32_t *pa, uint32_t *pb, uint32_t *pc, uint32_t *pd, const uint32_t S[DOIS_R_MAIS_4])
+ark6(uintw_t *pa, uintw_t *pb, uintw_t *pc, uintw_t *pd, const uintw_t S[DOIS_R_MAIS_4])
 {
     int i;
-    uint32_t a, b, c, d;
-    uint32_t t, u;
-    int dois_r_mais_2 = (R << 1) + 2;
+    uintw_t a, b, c, d;
+    uintw_t t, u;
+    int dois_r_mais_2;
+    dois_r_mais_2 = DOIS_R_MAIS_4 - 2;
     a = *pa;
     b = *pb + S[0];
     c = *pc;
     d = *pd + S[1];
     i = 2;
     while (i < dois_r_mais_2) {
-#ifndef RC6_MODE
+#ifndef RC6_MODE /* transformação T() de Ueda & Terada */
         b = T(b);
         d = T(d);
 #endif
-        t = rot_e(b * ((b << 1) + 1), 5);
-        u = rot_e(d * ((d << 1) + 1), 5);
+        t = rot_e(b * ((b << 1) + 1), ARK6_LOG2_W);
+        u = rot_e(d * ((d << 1) + 1), ARK6_LOG2_W);
         a = rot_e(a ^ t, u) + S[i++];
         c = rot_e(c ^ u, t) + S[i++];
         t = a;
@@ -143,10 +150,10 @@ uint8_t *
 ark6_block_key(uint8_t *block, const uint8_t *key)
 {
     int i;
-    uint32_t S[DOIS_R_MAIS_4];
-    uint32_t *block_vars;
-    calcula_subkeys((uint32_t *) key, S);
-    block_vars = (uint32_t *) block;
+    uintw_t S[DOIS_R_MAIS_4];
+    uintw_t *block_vars;
+    calcula_subkeys((uintw_t *) key, S);
+    block_vars = (uintw_t *) block;
     ark6(&block_vars[0],&block_vars[1],&block_vars[2],&block_vars[3], S);
     for (i = 0; i < DOIS_R_MAIS_4; i++) S[i] = 0;
     return block;
@@ -162,10 +169,10 @@ ark6_output_block_key(uint8_t *output, const uint8_t *block, const uint8_t *key)
 
 /* Criptografa block usando subchaves S */
 uint8_t *
-ark6_block_subkeys(uint8_t *block, const uint32_t S[DOIS_R_MAIS_4])
+ark6_block_subkeys(uint8_t *block, const uintw_t S[DOIS_R_MAIS_4])
 {
-    uint32_t *block_vars;
-    block_vars = (uint32_t *) block;
+    uintw_t *block_vars;
+    block_vars = (uintw_t *) block;
     ark6(&block_vars[0],&block_vars[1],&block_vars[2],&block_vars[3], S);
     return block;
 }
@@ -173,7 +180,7 @@ ark6_block_subkeys(uint8_t *block, const uint32_t S[DOIS_R_MAIS_4])
 /* Criptografa block usando subchaves S, com saída em output. */
 uint8_t *
 ark6_output_block_subkeys(uint8_t output[BLOCK_SIZE_BYTES],
-    const uint8_t *block, const uint32_t S[DOIS_R_MAIS_4])
+    const uint8_t *block, const uintw_t S[DOIS_R_MAIS_4])
 {
     memcpy(output, block, BLOCK_SIZE_BYTES);
     return ark6_block_subkeys(output, S);

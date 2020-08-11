@@ -30,9 +30,18 @@ For more information, please refer to <http://unlicense.org/>
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+#include <stdbool.h>
+#define __EM_IO_C_
 #include "include/io.h"
 #include "include/ark6_constants.h"
 #include "include/hash_functions.h"
+
+#define TAM_BUF_IO (4096)
+
+bool entrada_padrao = false;
+bool saida_padrao = false;
+FILE *fprint = NULL;
+
 
 #ifndef OS_LINUX
 #include <conio.h>
@@ -55,6 +64,22 @@ int getch(void)
 }
 #endif
 
+void binary_stdout(void) {
+#ifndef OS_LINUX
+#ifdef _WIN32
+    setmode(fileno(stdout), O_BINARY);
+#endif
+#endif
+}
+
+void binary_stdin(void) {
+#ifndef OS_LINUX
+#ifdef _WIN32
+    setmode(fileno(stdin), O_BINARY);
+#endif
+#endif
+}
+
 
 /* Versão bufferizada de fgetc.
 Para iniciar, chamar com o fd do arquivo.
@@ -64,12 +89,17 @@ int
 Fgetc(FILE *fd)
 {
     static FILE *fd_ = NULL;
-    static uint32_t tam_arq = 0;
-    static uint32_t pos_atu = 0;
-    static uint8_t buf[4096];
-    static int pos_buf = 4096;
-    static int limite = 4096;
+    static uint64_t tam_arq = 0;
+    static uint64_t pos_atu = 0;
+    static uint8_t buf[TAM_BUF_IO];
+    static int pos_buf = TAM_BUF_IO;
+    static int limite = TAM_BUF_IO;
     int i;
+
+    if (entrada_padrao) {
+        if (fd != NULL) return fgetc(fd);
+        return EOF;
+    }
 
     if (fd == NULL) {
         if (fd_ != NULL && pos_buf != limite) {
@@ -78,9 +108,9 @@ Fgetc(FILE *fd)
         fd_ = NULL;
         tam_arq = 0;
         pos_atu = 0;
-        pos_buf = 4096;
-        limite = 4096;
-        for (i = 0; i < 4096; i++) buf[i] = 0;  
+        pos_buf = TAM_BUF_IO;
+        limite = TAM_BUF_IO;
+        for (i = 0; i < TAM_BUF_IO; i++) buf[i] = 0;  
         return EOF;
     }
     if (fd != fd_) (void) Fgetc(NULL);
@@ -96,10 +126,10 @@ Fgetc(FILE *fd)
             return EOF;
         }
         pos_buf = 0;
-        if (pos_atu + 4096 <= tam_arq) {
-            (void) fread(buf, 4096, 1, fd);
-            pos_atu += 4096;
-            limite = 4096;
+        if (pos_atu + TAM_BUF_IO <= tam_arq) {
+            (void) fread(buf, TAM_BUF_IO, 1, fd);
+            pos_atu += TAM_BUF_IO;
+            limite = TAM_BUF_IO;
         }
         else {
             limite = tam_arq - pos_atu;
@@ -119,9 +149,16 @@ void
 Fputc(int ch, FILE *fd)
 {
     static FILE *fd_ = NULL;
-    static uint8_t buf[4096];
+    static uint8_t buf[TAM_BUF_IO];
     static int pos_buf = 0;
     int i;
+
+    if (saida_padrao) {
+        if (fd != NULL) {
+            fputc(ch, fd);
+        }
+        return;
+    }
 
     if (fd == NULL) {
         if (fd_ != NULL && pos_buf > 0) {
@@ -130,7 +167,7 @@ Fputc(int ch, FILE *fd)
         }
         fd_ = NULL;
         pos_buf = 0;
-        for (i = 0; i < 4096; i++) buf[i] = 0;  
+        for (i = 0; i < TAM_BUF_IO; i++) buf[i] = 0;  
         return;
     }
     if (fd != fd_) (void) Fputc(0, NULL);
@@ -140,46 +177,90 @@ Fputc(int ch, FILE *fd)
     }
     buf[pos_buf] = (uint8_t)(ch & 0xffU);
     pos_buf++;
-    if (pos_buf == 4096) {
+    if (pos_buf == TAM_BUF_IO) {
         fwrite(buf, pos_buf, 1, fd);
         pos_buf = 0;
     }
 }
 
+/* Coleta entropia do horario do sistema e da linha de comando.
+Se nao estiver usando sdin, usa bytes do teclado também.
+Usa pbkdf2 como hash, devido aos tamanhos arbitrários.
+*/
 uint8_t *
-salt_aleatorio(uint8_t *salt, const int qtd_bytes)
+salt_aleatorio(uint8_t *salt, const int qtd_bytes, int argc, char *argv[], char *envp[])
 {
-    int i;
+    int i, j;
     int ch;
     uint8_t *salt_ant;
-    if (qtd_bytes < 1 || qtd_bytes % BLOCK_SIZE_BYTES != 0) {
-        fprintf(stderr, "Erro: salt deve ter tamanho multiplo de %d\n", BLOCK_SIZE_BYTES);
-        exit (1);
-    }
+    uint8_t bloco[BLOCK_SIZE_BYTES];
+
+    if (qtd_bytes < 1) return salt;
     salt_ant = (uint8_t *) malloc(qtd_bytes);
     if (salt_ant == NULL) {
         fprintf (stderr, "Sem memoria em salt_aleatorio().\n");
         exit (1);
     }
-    for (i = 0; i < qtd_bytes; i++) salt[i] = 0;
-    printf("Digite aleatoriamente para coletar entropia do salt, e ESC para terminar...\n");
+    /* Comecar com a hora do sistema */
+    sprintf((char *) bloco, "%lx", time(NULL));
+    /* pode ler à vontade mesmo após a hora gravada, quanto mais lixo melhor */
+    pbkdf2(salt, qtd_bytes, bloco, BLOCK_SIZE_BYTES, NULL, 0, 1);
+    /* Coletar entropia da entrada */
+    while (argc > 0) {
+        argc--;
+        memcpy(salt_ant, salt, qtd_bytes);
+        pbkdf2(salt, qtd_bytes, (uint8_t *) argv[argc], strlen(argv[argc]), salt_ant, qtd_bytes, 1);
+        for (i = 0; i < qtd_bytes; i++) salt[i] ^= salt_ant[i];
+    }
+    /* Coletar entropia das variaveis de ambiente */
+    if (envp != NULL) {
+        j = 0;
+        while (envp[j] != NULL) {
+            memcpy(salt_ant, salt, qtd_bytes);
+            pbkdf2(salt, qtd_bytes, (uint8_t *) envp[j], strlen(envp[j]), salt_ant, qtd_bytes, 1);
+            for (i = 0; i < qtd_bytes; i++) salt[i] ^= salt_ant[i];
+            j++;
+        }
+    }
+    if (entrada_padrao) { /* se entrada e' stdin, não pode usar entropia do teclado */
+        /* Coletar apenas uma entropia de clock() */
+        sprintf((char *) bloco, "%ld", (long) clock());
+        pbkdf2(salt_ant, qtd_bytes, bloco, BLOCK_SIZE_BYTES, salt, qtd_bytes, 1);
+        for (j = 0; j < qtd_bytes; j++) salt[j] ^= salt_ant[j];
+        memcpy(salt_ant, salt, qtd_bytes);
+        pbkdf2(salt, qtd_bytes, salt_ant, qtd_bytes, NULL, 0, 100);
+        for (i = 0; i < qtd_bytes; i++) salt_ant[i] = 0;
+        free(salt_ant);
+        for (i = 0; i < BLOCK_SIZE_BYTES; i++) bloco[i] = 0;
+        ch = 0;
+        i = 0;
+        return salt;
+    }
+
+    fprintf(fprint, "Digite aleatoriamente para coletar entropia do salt, e ESC para terminar...\n");
 
     i = 0;
     for (;;) {
         ch = getch();
+        /* inicio coleta entropia de clock() */
+        sprintf((char *) bloco, "%ld", (long) clock());
+        pbkdf2(salt_ant, qtd_bytes, bloco, BLOCK_SIZE_BYTES, salt, qtd_bytes, 1);
+        for (j = 0; j < qtd_bytes; j++) salt[j] ^= salt_ant[j];
+        /* fim coleta entropia de clock() */
         if (ch == CHR_ESC) break;
         salt[i] ^= (uint8_t) (ch & 0xffU);
         i++;
         if (i == qtd_bytes) {
             i = 0;
             memcpy(salt_ant, salt, qtd_bytes);
-            pbkdf2(salt, qtd_bytes / BLOCK_SIZE_BYTES, salt_ant, qtd_bytes, NULL, 0, 1);
+            pbkdf2(salt, qtd_bytes, salt_ant, qtd_bytes, NULL, 0, 1);
         }
     }
     memcpy(salt_ant, salt, qtd_bytes);
-    pbkdf2(salt, qtd_bytes / BLOCK_SIZE_BYTES, salt_ant, qtd_bytes, NULL, 0, 1);
+    pbkdf2(salt, qtd_bytes, salt_ant, qtd_bytes, NULL, 0, 100);
     for (i = 0; i < qtd_bytes; i++) salt_ant[i] = 0;
     free(salt_ant);
+    for (i = 0; i < BLOCK_SIZE_BYTES; i++) bloco[i] = 0;
     ch = 0;
     i = 0;
     return salt;
@@ -200,7 +281,12 @@ le_senha(uint8_t *senha, int tam_buf)
             exit(0);
         }
         if (ch == CHR_CR || ch == CHR_LF) break;
-        if (ch == CHR_BACKSPACE) {
+        if (
+            ch == CHR_BACKSPACE
+#ifdef OS_LINUX
+            || ch == CHR_BACKSPACE_LINUX
+#endif
+        ) {
             if (i == 0) {
                 printf("%c", CHR_BEEP);
                 fflush(stdout);
@@ -236,6 +322,13 @@ verifica_existencia_saida(char *nome_arq_saida)
     fd = fopen(nome_arq_saida, "rb");
     if (fd == NULL) return;
     fclose (fd);
+    if (entrada_padrao) {
+        fprintf(stderr,
+            "Arquivo saida ja' existe. Utilize entrada nao stdin, ou\n"
+            "utilize saida stdout redirecionada para o arquivo.\n"
+        );
+        exit(1);
+    }
     printf(
         "Arquivo de saida\n'%s'\n"
         "ja' existe. Digite o resultado se quiser\n"
@@ -260,6 +353,11 @@ verifica_existencia_saida(char *nome_arq_saida)
 }
 
 /*
+
+        fo = freopen("CON", "wb", stdout); / *Mingw C++; Windows* / 
+        fo = freopen("/dev/tty", "w", stdout); / *for gcc, ubuntu* /  
+
+
 https://stackoverflow.com/questions/7469139/what-is-the-equivalent-to-getch-getche-in-linux
 
 #include <termios.h>
