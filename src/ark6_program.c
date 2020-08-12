@@ -159,14 +159,14 @@ exit(1);
 }
 
 void
-descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando)
+descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando, bool modo_teste)
 {
     int i;
     int ch;
     int pos_bloco;
-    uint64_t tam_entrada;
+    uint64_t tam_entrada = 0;
     uint64_t qtd_tratados;
-    uint64_t cont_impressao;
+    uint64_t cont_impressao = 0;
     uint8_t salt_inicial[BLOCK_SIZE_BYTES];
     uint8_t bytes_conferencia[BLOCK_SIZE_BYTES];
     uint8_t bytes_conferencia_calculados[2 * BLOCK_SIZE_BYTES];
@@ -175,15 +175,18 @@ descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando)
     uint8_t senha[TAM_BUF_SENHA];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
+
 #ifdef RC6_MODE
-fprintf(stderr, "Funcao descriptografa_arquivo() nao deve ser usada no modo RC6.\n");
-exit(1);
+    fprintf(stderr, "Funcao descriptografa_arquivo() nao deve ser usada no modo RC6.\n");
+    exit(1);
 #endif
-    fseek(fi, 0, SEEK_END);
-    tam_entrada = ftell(fi);
-    fseek(fi, 0, SEEK_SET);
-    if (tam_entrada <= 32) { /* salt (128) e conferencia (128) */
-        tam_entrada = 0;
+    if (! entrada_padrao) {
+        fseek(fi, 0, SEEK_END);
+        tam_entrada = ftell(fi);
+        fseek(fi, 0, SEEK_SET);
+        if (tam_entrada <= 32) { /* salt (128) e conferencia (128) */
+            tam_entrada = 0;
+        }
     }
 
     for (i = 0; i < 16; i++) {
@@ -211,6 +214,10 @@ exit(1);
             if (i == 16) break;
             fprintf (fprint, "SENHA INCORRETA.\n");
         }
+        if (modo_teste) {
+            fprintf(fprint, "Senha correta!\n");
+            exit(0);
+        }
     }
     else {
         if ((i = strlen(senha_comando) >= TAM_BUF_SENHA)) {
@@ -232,6 +239,10 @@ exit(1);
             fprintf (fprint, "SENHA INCORRETA.\n");
             exit(1);
         }
+        else if (modo_teste) {
+            fprintf(fprint, "Senha correta!\n");
+            exit(0);
+        }
     }
 
     memcpy (salt_384, salt_inicial, 16);
@@ -247,7 +258,11 @@ exit(1);
     for (i = 384 / 8; i > 0; i--) salt_384[i - 1] = 0;
     pos_bloco = BLOCK_SIZE_BYTES;
     qtd_tratados = 0;
-    cont_impressao = tam_entrada / 100 - 1;
+    if (! entrada_padrao) cont_impressao = tam_entrada / 100 - 1;
+    else {
+        fprintf(fprint, "Aguarde...");
+        fflush(fprint);
+    }
     for (;;) {
         ch = Fgetc(fi);
         if (ch == EOF) break;
@@ -259,13 +274,14 @@ exit(1);
         Fputc((ch ^ bloco_out[pos_bloco]) & 0xffU, fo);
         pos_bloco++;
         qtd_tratados++;
-        if (cont_impressao-- == 0) {
+        if (! entrada_padrao && cont_impressao-- == 0) {
             fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
             fflush(fprint);
             cont_impressao = tam_entrada / 100 - 1;
         }
     }
-    fprintf(fprint, "\r100%%\n");
+    if (! entrada_padrao) fprintf(fprint, "\r100%%\n");
+    else fprintf(fprint, " feito!\n");
     Fputc(0, NULL); /* flush do que está no buffer */
     fflush(fo);
     fi = fo = NULL;
@@ -282,6 +298,8 @@ main(int argc, char *argv[], char *envp[])
 {
     FILE *fi;
     FILE *fo;
+    bool modo_teste = false;
+
     (void) clock(); /* para iniciar contador e coletar entropia */
 
     /* Teste padrão se RC6(w=32,r=20,b=32) está ok
@@ -298,14 +316,19 @@ main(int argc, char *argv[], char *envp[])
     exit(0);
     //*/
 
-    if ((argc != 4 && argc != 5) || argv[1][0] != '-'
-        || (argv[1][1] != 'c' && argv[1][1] != 'd')
-        || strcmp(argv[2], argv[3]) == 0
+    if (
+        argc < 2
+        || argv[1][0] != '-'
+        || (argv[1][1] != 'c' && argv[1][1] != 'd' && argv[1][1] != 't')
+        || (argv[1][1] != 't' && (argc != 4 && argc != 5))
+        || (argv[1][1] == 't' && (argc != 3 && argc != 4))
+        || (argv[1][1] != 't' && strcmp(argv[2], argv[3]) == 0)
     ) {
         printf (
                 "Sintaxe:\n"
                 "       cifrar: ark6 -c arq_entrada_legivel.ext arq_saida_cifrado.ext [senha]\n"
                 "     decifrar: ark6 -d arq_entrada_cifrado.ext arq_saida_decifrado_legivel.ext [senha]\n"
+                " testar senha: ark6 -t arq_entrada_cifrado.ext [senha]\n"
                 "Para usar entrada/saida padroes, usar --stdin e/ou\n"
                 "--stdout no lugar dos nomes dos arquivos.\n"
                 "Se a entrada for stdin, e' obrigatorio informar a senha no comando.\n"
@@ -326,7 +349,10 @@ main(int argc, char *argv[], char *envp[])
     }
     else {
         entrada_padrao = true;
-        if (argc < 5) {
+        if (
+            (argv[1][1] != 't' && argc < 5)
+            || (argv[1][1] == 't' && argc < 4)
+        ) {
             fprintf(stderr, "Entrada stdin precisa da senha na linha de comando.\n");
             exit(1);
         }
@@ -334,59 +360,50 @@ main(int argc, char *argv[], char *envp[])
         fi = stdin;
     }
 
-    if (strcmp(argv[3], "--stdout") != 0) {
-        saida_padrao = false;
-        fprint = stdout;
-#if 0
- ifndef OS_LINUX
-        fprint = freopen("CON", "w", stderr); /*Mingw C++; Windows*/ 
- else
-        fprint = freopen("/dev/tty", "w", stderr); /*for gcc, ubuntu*/  
-  endif
-#endif
-        verifica_existencia_saida(argv[3]);
-        fo = fopen(argv[3], "wb");
-        if (fo == NULL) {
-            if (! entrada_padrao) fclose(fi);
-            fprintf (stderr, "Erro ao criar arquivo de saida.\n");
-            exit (1);
+    if (argv[1][1] != 't') {
+        modo_teste = false;
+        if (strcmp(argv[3], "--stdout") != 0) {
+            saida_padrao = false;
+            fprint = stdout;
+            verifica_existencia_saida(argv[3]);
+            fo = fopen(argv[3], "wb");
+            if (fo == NULL) {
+                if (! entrada_padrao) fclose(fi);
+                fprintf (stderr, "Erro ao criar arquivo de saida.\n");
+                exit (1);
+            }
+        }
+        else {
+            saida_padrao = true;
+            fprint = stderr;
+            binary_stdout();
+            fo = stdout;
+            if (fo == NULL) {
+                if (! entrada_padrao) fclose(fi);
+                fprintf (stderr, "Erro ao configurar saida padrao.\n");
+                exit (1);
+            }
         }
     }
     else {
-        saida_padrao = true;
-        fprint = stderr;
-#if 0
-ifndef OS_LINUX
-        fprint = freopen("CON", "w", stderr); /*Mingw C++; Windows*/ 
-else
-        fprint = freopen("/dev/tty", "w", stderr); /*for gcc, ubuntu*/  
-endif
-#endif
-        binary_stdout();
-        fo = stdout; // nao esta funcionando... */
-#if 0
-ifndef OS_LINUX
-        fo = freopen("CON", "wb", stdout); /*Mingw C++; Windows*/ 
-else
-        fo = freopen("/dev/tty", "w", stdout); /*for gcc, ubuntu*/  
-endif
-#endif
-        if (fo == NULL) {
-            if (! entrada_padrao) fclose(fi);
-            fprintf (stderr, "Erro ao configurar saida padrao.\n");
-            exit (1);
-        }
+        saida_padrao = false;
+        fprint = stdout;
+        modo_teste = true;
+        fo = NULL;
     }
 
     if (argv[1][1] == 'c') {
         criptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4], argc, argv, envp);
     }
     else if (argv[1][1] == 'd') {
-        descriptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4]);
+        descriptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4], modo_teste);
+    }
+    else if (argv[1][1] == 't') {
+        descriptografa_arquivo(fi, fo, argc < 4 ? NULL : argv[3], modo_teste);
     }
 
     fprintf(fprint, "Fim normal.\n");
-    if (! saida_padrao) fclose (fo);
+    if (! saida_padrao && fo != NULL) fclose (fo);
     if (! entrada_padrao) fclose(fi);
 
     return 0;

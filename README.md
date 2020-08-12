@@ -240,11 +240,14 @@ que poderiam estar presentes em um programa mais completo.
 
 **Cifrar:** `ark6 -c arquivo_entrada_legivel.extensao arquivo_saida_cifrado.ark6 [senha]`  
 **Decifrar:** `ark6 -d arquivo_entrada_cifrado.ark6 arquivo_saida_decifrado_legivel.extensao [senha]`
+**Testar senha:** `ark6 -t arquivo_entrada_cifrado.ark6 [senha]`
 
 - Para usar entrada padrão, colocar *--stdin* no nome do arquivo.
 - Para usar saída padrão, colocar *--stdout* no nome do arquivo. Neste caso, não se deve
 redirecionar stderr, pois as impressões serão feitas neste local.
 - O parâmetro da senha é opcional. Se a entrada for --stdin, a senha na linha de comando é obrigatória.
+- O teste da senha apenas verifica se as senhas tentadas (ou a da linha de comando) estão corretas,
+sem gerar nenhuma saída com o arquivo decifrado.
 
 ### Algoritmos adicionais do programa
 
