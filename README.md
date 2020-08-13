@@ -433,6 +433,15 @@ anterior (de bytes de conferência de senha corrompidos), então é recomendado
 muitos os bytes alterados no arquivo corrompido neste trecho inicial, o conteúdo
 estará perdido.
 
+
+### Limitação do tamanho do arquivo de entrada
+
+O arquivo de entrada deverá ter menos que 2 [GiB](https://en.wikipedia.org/wiki/Gibibyte),
+caso contrário dará erro de leitura.
+Para arquivos maiores, deve-se usar entrada --stdin com redirecionamento da entrada a partir
+do arquivo grande.
+
+
 ### Variações na implementação de ark6
 
 Futuras implementações poderão incluir variações que
@@ -445,6 +454,7 @@ como os exemplos abaixo:
 - Implementação de uma interface gráfica mais amigável
 - Implementação de aplicativo para celulares
 - Refatorações diversas
+- Suporte a arquivos com mais de 2 GiB.
 
 ### Versões em outras linguagens
 

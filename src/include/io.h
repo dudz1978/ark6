@@ -58,6 +58,8 @@ void binary_stdin(void);
 
 #define TAM_BUF_SENHA (65536)
 
+#define ERRO_IO (-314159265)
+
 
 /* Versão bufferizada de fgetc.
 Para iniciar, chamar com o fd do arquivo.
@@ -70,7 +72,7 @@ Fgetc(FILE *fd);
 Para iniciar, chamar com o fd do arquivo.
 Para resetar, chamar com NULL, ou o fd diferente do anterior.
 */
-void
+int
 Fputc(int ch, FILE *fd);
 
 uint8_t *

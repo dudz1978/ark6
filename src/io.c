@@ -103,7 +103,7 @@ Fgetc(FILE *fd)
 
     if (fd == NULL) {
         if (fd_ != NULL && pos_buf != limite) {
-            fseek(fd, pos_atu - (limite - pos_buf), SEEK_SET);
+            if (fseek(fd, pos_atu - (limite - pos_buf), SEEK_SET) < 0) return ERRO_IO;
         }
         fd_ = NULL;
         tam_arq = 0;
@@ -117,9 +117,11 @@ Fgetc(FILE *fd)
     if (fd_ == NULL) {
         fd_ = fd;
         pos_atu = ftell(fd);
-        fseek(fd, 0, SEEK_END);
+        if (pos_atu >= 2147483648UL) return ERRO_IO;
+        if (fseek(fd, 0, SEEK_END) < 0) return ERRO_IO;
         tam_arq = ftell(fd);
-        fseek(fd, pos_atu, SEEK_SET);
+        if (tam_arq >= 2147483648UL) return ERRO_IO;
+        if (fseek(fd, pos_atu, SEEK_SET) < 0) return ERRO_IO;
     }
     if (pos_buf == limite) {
         if (pos_atu >= tam_arq) {
@@ -127,13 +129,13 @@ Fgetc(FILE *fd)
         }
         pos_buf = 0;
         if (pos_atu + TAM_BUF_IO <= tam_arq) {
-            (void) fread(buf, TAM_BUF_IO, 1, fd);
+            if (fread(buf, TAM_BUF_IO, 1, fd) != 1) return ERRO_IO;
             pos_atu += TAM_BUF_IO;
             limite = TAM_BUF_IO;
         }
         else {
             limite = tam_arq - pos_atu;
-            (void) fread(buf, limite, 1, fd);
+            if (fread(buf, limite, 1, fd) != 1) return ERRO_IO;
             pos_atu += limite;
         }
     }
@@ -144,8 +146,9 @@ Fgetc(FILE *fd)
 /* Versão bufferizada de fputc.
 Para iniciar, chamar com o fd do arquivo.
 Para resetar, chamar com NULL, ou o fd diferente do anterior.
+Devolve 0 em caso de sucesso.
 */
-void
+int
 Fputc(int ch, FILE *fd)
 {
     static FILE *fd_ = NULL;
@@ -157,18 +160,18 @@ Fputc(int ch, FILE *fd)
         if (fd != NULL) {
             fputc(ch, fd);
         }
-        return;
+        return 0;
     }
 
     if (fd == NULL) {
         if (fd_ != NULL && pos_buf > 0) {
-            fwrite(buf, pos_buf, 1, fd_);
-            fflush(fd_);
+            if (fwrite(buf, pos_buf, 1, fd_) != 1) return ERRO_IO;
+            if (fflush(fd_) < 0) return ERRO_IO;
         }
         fd_ = NULL;
         pos_buf = 0;
         for (i = 0; i < TAM_BUF_IO; i++) buf[i] = 0;  
-        return;
+        return 0;
     }
     if (fd != fd_) (void) Fputc(0, NULL);
     if (fd_ == NULL) {
@@ -178,9 +181,10 @@ Fputc(int ch, FILE *fd)
     buf[pos_buf] = (uint8_t)(ch & 0xffU);
     pos_buf++;
     if (pos_buf == TAM_BUF_IO) {
-        fwrite(buf, pos_buf, 1, fd);
+        if (fwrite(buf, pos_buf, 1, fd) != 1) return ERRO_IO;
         pos_buf = 0;
     }
+    return 0;
 }
 
 /* Coleta entropia do horario do sistema e da linha de comando.
@@ -345,8 +349,7 @@ verifica_existencia_saida(char *nome_arq_saida)
     printf ("%d + %d = ", a, b);
     fflush(stdout);
     soma = a + b;
-    fgets(resposta, 127, stdin);
-    if (atoi(resposta) != soma) {
+    if (fgets(resposta, 127, stdin) == NULL || atoi(resposta) != soma) {
         printf("Execucao interrompida.\n");
         exit(0);
     }

@@ -67,9 +67,9 @@ criptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando,
     uint8_t hash_senha2[BLOCK_SIZE_BYTES];
     uint8_t key[KEY_SIZE_BYTES];
     uint8_t bloco_out[BLOCK_SIZE_BYTES], bloco_count[BLOCK_SIZE_BYTES];
-    uint64_t tam_entrada;
-    uint64_t qtd_tratados;
-    uint64_t cont_impressao;
+    uint64_t tam_entrada = 0;
+    uint64_t qtd_tratados = 0;
+    uint64_t cont_impressao = 0;
 #ifdef RC6_MODE
 fprintf(stderr, "Funcao criptografa_arquivo() nao deve ser usada no modo RC6.\n");
 exit(1);
@@ -126,30 +126,59 @@ exit(1);
     hash_256_bytes(bloco_count, salt_384, 384 / 8);
     for (i = 384 / 8; i > 0; i--) salt_384[i - 1] = 0;
     pos_bloco = BLOCK_SIZE_BYTES;
-    fseek(fi, 0, SEEK_END);
-    tam_entrada = ftell(fi);
-    fseek(fi, 0, SEEK_SET);
+    if (! entrada_padrao) {
+        fseek(fi, 0, SEEK_END);
+        tam_entrada = ftell(fi);
+        fseek(fi, 0, SEEK_SET);
+    }
     qtd_tratados = 0;
-    cont_impressao = tam_entrada / 100 - 1;
+    if (! entrada_padrao) cont_impressao = tam_entrada / 100 - 1;
+    else {
+        fprintf(fprint, "Aguarde...");
+        fflush (fprint);
+    }
     for (;;) {
         ch = Fgetc(fi);
         if (ch == EOF) break;
+        if (ch == ERRO_IO || (++qtd_tratados >= 0x80000000UL && !entrada_padrao)) {
+            if (! entrada_padrao) fclose (fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
+            fi = fo = NULL;
+            ch = 0;
+            pos_bloco = 0;
+            for (i = 0; i < DOIS_R_MAIS_4; i++) subkeys[i] = 0;
+            for (i = BLOCK_SIZE_BYTES; i > 0; i--) bloco_out[i-1] = bloco_count[i-1] = 0;
+            fprintf(stderr, "\nErro de leitura de entrada.\n");
+            exit(1);
+        }
         if (pos_bloco == BLOCK_SIZE_BYTES) {
             pos_bloco = 0;
             ark6_output_block_subkeys(bloco_out, bloco_count, subkeys);
             incrementa_contador(bloco_count);
         }
-        Fputc((ch ^ bloco_out[pos_bloco]) & 0xffU, fo);
+        if (Fputc((ch ^ bloco_out[pos_bloco]) & 0xffU, fo) == ERRO_IO) {
+            if (! entrada_padrao) fclose (fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
+            fi = fo = NULL;
+            ch = 0;
+            pos_bloco = 0;
+            for (i = 0; i < DOIS_R_MAIS_4; i++) subkeys[i] = 0;
+            for (i = BLOCK_SIZE_BYTES; i > 0; i--) bloco_out[i-1] = bloco_count[i-1] = 0;
+            fprintf(stderr, "\nErro de gravacao da saida.\n");
+            exit(1);
+        }
         pos_bloco++;
-        qtd_tratados++;
-        if (cont_impressao-- == 0) {
-            fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
-            fflush(fprint);
-            cont_impressao = tam_entrada / 100 - 1;
+        if (! entrada_padrao) {
+            if (cont_impressao-- == 0) {
+                fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
+                fflush(fprint);
+                cont_impressao = tam_entrada / 100 - 1;
+            }
         }
     }
-    fprintf(fprint, "\r100%%\n");
-    Fputc(0, NULL); /* flush do que está no buffer */
+    if (! entrada_padrao) fprintf(fprint, "\r100%%\n");
+    else fprintf (fprint, " feito!\n");
+    (void) Fputc(0, NULL); /* flush do que está no buffer */
     fflush(fo);
     fi = fo = NULL;
     ch = 0;
@@ -215,6 +244,10 @@ descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando, bool modo_teste)
             fprintf (fprint, "SENHA INCORRETA.\n");
         }
         if (modo_teste) {
+            for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
+            for (i = 0; i < 32; i++) bytes_conferencia_calculados[i] = 0;
+            if (! entrada_padrao) fclose(fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
             fprintf(fprint, "Senha correta!\n");
             exit(0);
         }
@@ -223,6 +256,8 @@ descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando, bool modo_teste)
         if ((i = strlen(senha_comando) >= TAM_BUF_SENHA)) {
             fprintf(stderr, "Erro: Senha muito grande.\n");
             for (; i >= 0; i--) senha_comando[i] = 0;
+            if (! entrada_padrao) fclose(fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
             exit(1);
         }
         strcpy((char *) senha, senha_comando);
@@ -237,9 +272,15 @@ descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando, bool modo_teste)
         }
         if (i != 16) {
             fprintf (fprint, "SENHA INCORRETA.\n");
+            if (! entrada_padrao) fclose(fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
             exit(1);
         }
         else if (modo_teste) {
+            for (i = TAM_BUF_SENHA-1; i >= 0; i--) senha[i] = 0;
+            for (i = 0; i < 32; i++) bytes_conferencia_calculados[i] = 0;
+            if (! entrada_padrao) fclose(fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
             fprintf(fprint, "Senha correta!\n");
             exit(0);
         }
@@ -266,23 +307,45 @@ descriptografa_arquivo(FILE *fi, FILE *fo, char *senha_comando, bool modo_teste)
     for (;;) {
         ch = Fgetc(fi);
         if (ch == EOF) break;
+        if (ch == ERRO_IO || (++qtd_tratados >= 0x80000000UL && !entrada_padrao)) {
+            if (! entrada_padrao) fclose (fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
+            fi = fo = NULL;
+            ch = 0;
+            pos_bloco = 0;
+            for (i = 0; i < DOIS_R_MAIS_4; i++) subkeys[i] = 0;
+            for (i = BLOCK_SIZE_BYTES; i > 0; i--) bloco_out[i-1] = bloco_count[i-1] = 0;
+            fprintf(stderr, "\nErro de leitura de entrada.\n");
+            exit(1);
+        }
         if (pos_bloco == BLOCK_SIZE_BYTES) {
             pos_bloco = 0;
             ark6_output_block_subkeys(bloco_out, bloco_count, subkeys);
             incrementa_contador(bloco_count);
         }
-        Fputc((ch ^ bloco_out[pos_bloco]) & 0xffU, fo);
+        if (Fputc((ch ^ bloco_out[pos_bloco]) & 0xffU, fo) == ERRO_IO) {
+            if (! entrada_padrao) fclose (fi);
+            if (! saida_padrao && fo != NULL) fclose(fo);
+            fi = fo = NULL;
+            ch = 0;
+            pos_bloco = 0;
+            for (i = 0; i < DOIS_R_MAIS_4; i++) subkeys[i] = 0;
+            for (i = BLOCK_SIZE_BYTES; i > 0; i--) bloco_out[i-1] = bloco_count[i-1] = 0;
+            fprintf(stderr, "\nErro de gravacao da saida.\n");
+            exit(1);
+        }
         pos_bloco++;
-        qtd_tratados++;
-        if (! entrada_padrao && cont_impressao-- == 0) {
-            fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
-            fflush(fprint);
-            cont_impressao = tam_entrada / 100 - 1;
+        if (! entrada_padrao) {
+            if (cont_impressao-- == 0) {
+                fprintf(fprint, "\r%d%%", (int)(100.0 * qtd_tratados / tam_entrada));
+                fflush(fprint);
+                cont_impressao = tam_entrada / 100 - 1;
+            }
         }
     }
     if (! entrada_padrao) fprintf(fprint, "\r100%%\n");
     else fprintf(fprint, " feito!\n");
-    Fputc(0, NULL); /* flush do que está no buffer */
+    (void) Fputc(0, NULL); /* flush do que está no buffer */
     fflush(fo);
     fi = fo = NULL;
     ch = 0;
