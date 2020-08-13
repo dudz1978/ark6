@@ -31,11 +31,27 @@ For more information, please refer to <http://unlicense.org/>
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
+#include <ctype.h>
 #include "include/io.h"
 #include "include/ark6_constants.h"
 #include "include/ark6_functions.h"
 #include "include/hash_functions.h"
 
+int
+Stricmp(const char *s1, const char *s2)
+{
+    int i;
+    if (s1 == NULL && s2 == NULL) return 0;
+    if (s1 == NULL) return 1;
+    if (s2 == NULL) return -1;
+    i = 0;
+    while (s1[i] != '\0' || s2[i] != '\0'){
+        if (tolower(s1[i]) < tolower(s2[i])) return -1;
+        if (tolower(s1[i]) > tolower(s2[i])) return 1;
+        i++;
+    }
+    return 0;
+}
 
 void
 incrementa_contador(uint8_t bloco_count[BLOCK_SIZE_BYTES])
@@ -361,7 +377,12 @@ main(int argc, char *argv[], char *envp[])
 {
     FILE *fi;
     FILE *fo;
+    int i;
     bool modo_teste = false;
+    char nome_saida[1024];
+    bool cifrar = false;
+    bool decifrar = false;
+    bool comando_help = false;
 
     (void) clock(); /* para iniciar contador e coletar entropia */
 
@@ -379,22 +400,67 @@ main(int argc, char *argv[], char *envp[])
     exit(0);
     //*/
 
+    if (argc > 1) {
+        if (
+            Stricmp(argv[1], "--help") == 0 ||
+            strcmp(argv[1], "-?") == 0 ||
+            Stricmp(argv[1], "-h") == 0 ||
+            strcmp(argv[1], "/?") == 0 ||
+            strcmp(argv[1], "?") == 0 ||
+            Stricmp(argv[1], "/h") == 0 ||
+            Stricmp(argv[1], "/help") == 0
+        ) comando_help = true;
+    }
+
     if (
-        argc < 2
-        || argv[1][0] != '-'
-        || (argv[1][1] != 'c' && argv[1][1] != 'd' && argv[1][1] != 't')
-        || (argv[1][1] != 't' && (argc != 4 && argc != 5))
-        || (argv[1][1] == 't' && (argc != 3 && argc != 4))
-        || (argv[1][1] != 't' && strcmp(argv[2], argv[3]) == 0)
+        (
+            argc != 2 ||
+            (i = strlen(argv[1])) < 6 || i > 1024 ||
+            Stricmp((char *) &argv[1][i - 5], ".ark6") != 0 ||
+            (
+                (argv[1][i-6] < 'a' || argv[1][i-6] > 'z') &&
+                (argv[1][i-6] < 'A' || argv[1][i-6] > 'Z') &&
+                (argv[1][i-6] < '0' || argv[1][i-6] > '9') &&
+                argv[1][i-6] != '_'
+            ) ||
+            (decifrar = true) == false
+        ) &&
+        (
+            argc != 2 ||
+            (i = strlen(argv[1])) < 1 || i >= 1024-5 ||
+            argv[1][0] == '.' ||
+            (i >= 5 &&  Stricmp((char *) &argv[1][i - 5], ".ark6") == 0) ||
+            (
+                (argv[1][i-1] < 'a' || argv[1][i-1] > 'z') &&
+                (argv[1][i-1] < 'A' || argv[1][i-1] > 'Z') &&
+                (argv[1][i-1] < '0' || argv[1][i-1] > '9') &&
+                argv[1][i-1] != '_'
+            ) ||
+            (cifrar = true) == false
+        ) &&
+        (   comando_help
+            || argc < 2
+            || argv[1][0] != '-'
+            || (argv[1][1] != 'c' && argv[1][1] != 'd' && argv[1][1] != 't')
+            || (argv[1][1] != 't' && (argc != 4 && argc != 5))
+            || (argv[1][1] == 't' && (argc != 3 && argc != 4))
+            || (argv[1][1] != 't' && strcmp(argv[2], argv[3]) == 0)
+        )
     ) {
         printf (
                 "Sintaxe:\n"
                 "       cifrar: ark6 -c arq_entrada_legivel.ext arq_saida_cifrado.ext [senha]\n"
+                "       cifrar: ark6 arq_entrada_legivel.ext\n"
                 "     decifrar: ark6 -d arq_entrada_cifrado.ext arq_saida_decifrado_legivel.ext [senha]\n"
+                "     decifrar: ark6 nome_entrada_cifrada.ark6\n"
                 " testar senha: ark6 -t arq_entrada_cifrado.ext [senha]\n"
                 "Para usar entrada/saida padroes, usar --stdin e/ou\n"
                 "--stdout no lugar dos nomes dos arquivos.\n"
                 "Se a entrada for stdin, e' obrigatorio informar a senha no comando.\n"
+                "Se for fornecido apenas o nome do arquivo com extensao diferente de ark6,\n"
+                "cifrara' criando saida com mesmo nome e extensão ark6.\n"
+                "Se for fornecido apenas o nome do arquivo com extensao ark6, decifrara' criando\n"
+                "saida com mesmo nome antes da extensao.\n"
         );
         printf("\nPressione Enter...");
         fflush (stdout);
@@ -402,7 +468,34 @@ main(int argc, char *argv[], char *envp[])
         exit(0);
     }
 
-    if (strcmp(argv[2], "--stdin") != 0) {
+    if (argc == 2) {
+        modo_teste = false;
+        entrada_padrao = false;
+        fi = fopen(argv[1], "rb");
+        saida_padrao = false;
+        fprint = stdout;
+        if (fi == NULL) {
+            fprintf (stderr, "Erro ao abrir arquivo de entrada.\n");
+            exit (1);
+        }
+        if (strlen(argv[1]) >= 6 && Stricmp((char *) &argv[1][strlen(argv[1])-5], ".ark6") == 0) {
+            /* apenas parametro de arquivo com extensao .ark6 */
+            strncpy(nome_saida, argv[1], 1024-1);
+            nome_saida[strlen(argv[1]) - 5] = '\0';
+        }
+        else { /* apenas arquivo texto puro, para ser cifrado */
+            strncpy(nome_saida, argv[1], 1024-5-1);
+            strcat(nome_saida, ".ark6");
+        }
+        verifica_existencia_saida(nome_saida);
+        fo = fopen(nome_saida, "wb");
+        if (fo == NULL) {
+            if (! entrada_padrao) fclose(fi);
+            fprintf (stderr, "Erro ao criar arquivo de saida.\n");
+            exit (1);
+        }
+    }
+    else if (strcmp(argv[2], "--stdin") != 0) {
         entrada_padrao = false;
         fi = fopen(argv[2], "rb");
         if (fi == NULL) {
@@ -423,7 +516,7 @@ main(int argc, char *argv[], char *envp[])
         fi = stdin;
     }
 
-    if (argv[1][1] != 't') {
+    if (argc != 2 && argv[1][1] != 't') {
         modo_teste = false;
         if (strcmp(argv[3], "--stdout") != 0) {
             saida_padrao = false;
@@ -448,17 +541,17 @@ main(int argc, char *argv[], char *envp[])
             }
         }
     }
-    else {
+    else if (argc != 2 && argv[1][1] == 't') {
         saida_padrao = false;
         fprint = stdout;
         modo_teste = true;
         fo = NULL;
     }
 
-    if (argv[1][1] == 'c') {
+    if (argv[1][1] == 'c' || cifrar) {
         criptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4], argc, argv, envp);
     }
-    else if (argv[1][1] == 'd') {
+    else if (argv[1][1] == 'd' || decifrar) {
         descriptografa_arquivo(fi, fo, argc < 5 ? NULL : argv[4], modo_teste);
     }
     else if (argv[1][1] == 't') {

@@ -239,13 +239,18 @@ que poderiam estar presentes em um programa mais completo.
 ### Parâmetros
 
 **Cifrar:** `ark6 -c arquivo_entrada_legivel.extensao arquivo_saida_cifrado.ark6 [senha]`  
+**Cifrar:** `ark6 arquivo_entrada_legivel.ext`  
 **Decifrar:** `ark6 -d arquivo_entrada_cifrado.ark6 arquivo_saida_decifrado_legivel.extensao [senha]`
+**Decifrar:** `ark6 nome_arquivo.ext.ark6`  
 **Testar senha:** `ark6 -t arquivo_entrada_cifrado.ark6 [senha]`
 
 - Para usar entrada padrão, colocar *--stdin* no nome do arquivo.
 - Para usar saída padrão, colocar *--stdout* no nome do arquivo. Neste caso, não se deve
 redirecionar stderr, pois as impressões serão feitas neste local.
 - O parâmetro da senha é opcional. Se a entrada for --stdin, a senha na linha de comando é obrigatória.
+- Para cifrar apenas usando o nome do arquivo, basta que o arquivo não termine com a extensão *ark6*.
+- Para decifrar apenas usando nome do arquivo, a extensão .ark6 é obrigatória. O arquivo de saída terá
+o mesmo nome, retirando a extensão *ark6*. O arquivo original não é apagado.
 - O teste da senha apenas verifica se as senhas tentadas (ou a da linha de comando) estão corretas,
 sem gerar nenhuma saída com o arquivo decifrado.
 

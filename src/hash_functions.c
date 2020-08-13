@@ -233,7 +233,7 @@ pbkdf2(uint8_t *key, int qtd_bytes_chave,
         exit(1);
     }
     qtd_blocos_senha = qtd_bytes_chave / BLOCK_SIZE_BYTES;
-    if (qtd_blocos_senha * BLOCK_SIZE_BYTES > qtd_bytes_chave) {
+    if (qtd_blocos_senha * BLOCK_SIZE_BYTES < qtd_bytes_chave) {
         qtd_blocos_senha++;
     }
     i = 0;
