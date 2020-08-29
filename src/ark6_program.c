@@ -458,7 +458,7 @@ main(int argc, char *argv[], char *envp[])
                 "--stdout no lugar dos nomes dos arquivos.\n"
                 "Se a entrada for stdin, e' obrigatorio informar a senha no comando.\n"
                 "Se for fornecido apenas o nome do arquivo com extensao diferente de ark6,\n"
-                "cifrara' criando saida com mesmo nome e extensão ark6.\n"
+                "cifrara' criando saida com mesmo nome e extensao ark6.\n"
                 "Se for fornecido apenas o nome do arquivo com extensao ark6, decifrara' criando\n"
                 "saida com mesmo nome antes da extensao.\n"
         );

@@ -32,16 +32,16 @@ all: ./bin/ark6
 	gcc -Wall -Wextra -pedantic -O2 -static -s -o $@ $^
 
 ./bin/io.o: src/io.c src/include/io.h src/include/ark6_constants.h src/include/hash_functions.h
-	gcc -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
+	gcc -DOS_LINUX -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
 
 ./bin/ark6_functions.o: src/ark6_functions.c src/include/ark6_constants.h
-	gcc -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
+	gcc -DOS_LINUX -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
 
 ./bin/hash_functions.o: src/hash_functions.c src/include/ark6_constants.h src/include/ark6_functions.h
-	gcc -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
+	gcc -DOS_LINUX -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
 
 ./bin/ark6_program.o: src/ark6_program.c src/include/io.h src/include/ark6_constants.h src/include/ark6_functions.h src/include/hash_functions.h
-	gcc -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
+	gcc -DOS_LINUX -Wall -Wextra -pedantic -O2 -static -s -c -o $@ $<
 
 install: ./bin/ark6
 	rm -f /usr/bin/ark6 2> /dev/null
