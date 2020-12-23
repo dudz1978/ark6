@@ -271,7 +271,7 @@ para completar um múltiplo de 512 bits, que é o tamanho da chave do Ark6.
 #### PBKDF2
 
 O algoritmo [PBKDF2](https://en.wikipedia.org/wiki/PBKDF2) é implementado com
-2<sup>14</sup> iterações fixas,
+c = 2<sup>14</sup> iterações fixas,
 [salt](https://en.wikipedia.org/wiki/Salt_(cryptography))
 de tamanho arbitrário, e a função usada
 é o hash descrito acima. Em cada iteração de cálculo de T<sub>i</sub>,
