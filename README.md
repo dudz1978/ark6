@@ -240,7 +240,7 @@ que poderiam estar presentes em um programa mais completo.
 
 **Cifrar:** `ark6 -c arquivo_entrada_legivel.extensao arquivo_saida_cifrado.ark6 [senha]`  
 **Cifrar:** `ark6 arquivo_entrada_legivel.ext`  
-**Decifrar:** `ark6 -d arquivo_entrada_cifrado.ark6 arquivo_saida_decifrado_legivel.extensao [senha]`
+**Decifrar:** `ark6 -d arquivo_entrada_cifrado.ark6 arquivo_saida_decifrado_legivel.extensao [senha]`  
 **Decifrar:** `ark6 nome_arquivo.ext.ark6`  
 **Testar senha:** `ark6 -t arquivo_entrada_cifrado.ark6 [senha]`
 
@@ -300,12 +300,12 @@ também sem exibição.
 
 A chave de 512 bits é derivada usando PBKDF2
 a partir da senha, usando um salt de 384
-bits, em que os primeiros 128 são aleatórios
-e os demais são o
-[xor](https://en.wikipedia.org/wiki/Exclusive_or)
-das duas metades de um bloco de 256 bits gerados
-com o PBKDF2 da própria senha, usando como
-salt os 128 primeiros bits aleatórios do salt de 384 bits.
+bits. Esse salt é composto de 128 bits aleatórios
+e os bits 129º a 384º são um bloco de 256 bits gerados
+com o PBKDF2 da própria senha (usando como
+salt, para a geração dos bits 129º a 384º,
+os mesmos 128 primeiros bits aleatórios do
+salt de 384 bits).
 
 
 ### Modo de cifragem
@@ -460,6 +460,7 @@ como os exemplos abaixo:
 - Implementação de aplicativo para celulares
 - Refatorações diversas
 - Suporte a arquivos com mais de 2 GiB.
+
 
 ### Versões em outras linguagens
 
